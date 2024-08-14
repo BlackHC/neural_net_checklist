@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
-import re
 import neural_net_checklist.torch_diagnostics as torch_diagnostics
 
 
@@ -126,7 +125,7 @@ vocab_size = len(dataset.vocab)
 model = CausalTransformer(vocab_size)
 
 # Set device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 model.to(device)
 
 # Define loss function and optimizer
@@ -145,32 +144,34 @@ torch_diagnostics.assert_all_for_llm_cross_entropy_loss(
     device="cpu",
 )
 
-# Training loop (uncomment to train)
+# # %%
+# from tqdm.auto import tqdm
+
+# # Training loop (uncomment to train)
 # num_epochs = 100
-# for epoch in range(num_epochs):
+# for epoch in tqdm(range(num_epochs)):
 #     for batch in dataloader:
 #         inputs, targets = batch
 #         inputs, targets = inputs.to(device), targets.to(device)
-#
+
 #         optimizer.zero_grad()
 #         outputs = model(inputs)
 #         loss = criterion(outputs.view(-1, vocab_size), targets.view(-1))
 #         loss.backward()
 #         optimizer.step()
-#
+
 #     if (epoch + 1) % 10 == 0:
 #         print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
 
-# Generate text (uncomment to generate)
+# # %%
+# # Generate text (uncomment to generate)
 # model.eval()
 # with torch.no_grad():
-#     input_seq = torch.tensor([dataset.vocab.get(token, dataset.vocab['<unk>']) for token in simple_tokenizer('The quick')]).unsqueeze(0).to(device)
-#     for _ in range(20):
+#     input_seq = torch.tensor([dataset.vocab.get(token, dataset.vocab['<unk>']) for token in simple_tokenizer('Throw your')]).unsqueeze(0).to(device)
+#     for _ in range(16):
 #         output = model(input_seq)
 #         next_token = output[:, -1, :].argmax(dim=-1)
 #         input_seq = torch.cat([input_seq, next_token.unsqueeze(1)], dim=1)
-#
-#     generated_text = ' '.join([list(dataset.vocab.keys())[idx] for idx in input_seq.squeeze().tolist()])
-#     print(generated_text)
 
-# %%
+#     generated_text = ''.join([list(dataset.vocab.keys())[idx] for idx in input_seq.squeeze().tolist()])
+#     print(generated_text)
