@@ -54,4 +54,6 @@ import neural_net_checklist.torch_diagnostics as torch_diagnostics
 torch_diagnostics.ModelInputs(torch_diagnostics.get_supervised_batch(train_loader))
 
 # %%
-torch_diagnostics.assert_all_for_classification_cross_entropy_loss(LeNet5, train_loader, 10)
+torch_diagnostics.assert_all_for_classification_cross_entropy_loss(
+    LeNet5, train_loader, 10
+)

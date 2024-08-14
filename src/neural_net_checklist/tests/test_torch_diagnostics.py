@@ -37,10 +37,10 @@ def test_get_dummy_supervised_data_dataset():
 
 def test_get_dummy_supervised_data_function():
     dummy_data = torch.randn(32, 10), torch.randint(0, 10, (32,))
-    
+
     def supervised_batch_fn(batch_size):
         return dummy_data[0][:batch_size], dummy_data[1][:batch_size]
-    
+
     result_batch = torch_diagnostics.get_supervised_batch(
         supervised_batch_fn, batch_size=10
     )
@@ -89,18 +89,21 @@ def test_balanced_classification_cross_entropy_init_calibrated_failure():
 
 
 def test_forward_batch_independence_success():
-    model = torch.nn.Linear(10, 10)
+    def model_factory():
+        return torch.nn.Linear(10, 10)
+
     supervised_batch = (torch.randn(100, 10), torch.randint(0, 10, (100,)))
-    torch_diagnostics.assert_forward_batch_independence(model, supervised_batch)
+    torch_diagnostics.assert_forward_batch_independence(model_factory, supervised_batch)
 
 
 def test_forward_batch_independence_batch_norm_success():
     def model_factory():
         return torch.nn.Sequential(torch.nn.BatchNorm1d(10), torch.nn.Linear(10, 10))
+
     supervised_batch = (torch.randn(100, 10), torch.randint(0, 10, (100,)))
     torch_diagnostics.assert_forward_batch_independence(
         model_factory, supervised_batch, train_mode=True
-        )
+    )
     torch_diagnostics.assert_forward_batch_independence(
         model_factory, supervised_batch, train_mode=False
     )
@@ -118,6 +121,56 @@ def test_forward_batch_independence_failure():
     supervised_batch = (torch.randn(100, 10), torch.randint(0, 10, (100,)))
     with pytest.raises(AssertionError):
         torch_diagnostics.assert_forward_batch_independence(Model, supervised_batch)
+
+
+def test_forward_causal_property_success():
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(4, 4)
+
+        def forward(self, x):
+            original_shape = x.shape
+            return self.linear(x.reshape(-1, original_shape[-1])).reshape(
+                original_shape
+            )
+
+    supervised_batch = (
+        torch.randn(1, 16, 4),
+        torch.randint(
+            0,
+            4,
+            (
+                1,
+                16,
+            ),
+        ),
+    )
+    torch_diagnostics.assert_forward_causal_property(Model, supervised_batch)
+
+
+def test_forward_causal_property_failure():
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(10, 10)
+
+        def forward(self, x: torch.Tensor):
+            return self.linear(x.sum(dim=1)).repeat(1, x.shape[1], 1)
+
+    supervised_batch = (
+        torch.randn(1, 100, 10),
+        torch.randint(
+            0,
+            10,
+            (
+                1,
+                100,
+            ),
+        ),
+    )
+    with pytest.raises(AssertionError):
+        torch_diagnostics.assert_forward_causal_property(Model, supervised_batch)
 
 
 def test_non_zero_gradients_success():
@@ -140,15 +193,21 @@ def test_non_zero_gradients_failure():
 def test_backward_batch_independence_success():
     def model_factory():
         return torch.nn.Linear(10, 10)
+
     supervised_batch = (torch.randn(100, 10), torch.randint(0, 10, (100,)))
-    torch_diagnostics.assert_backward_batch_independence(model_factory, supervised_batch)
+    torch_diagnostics.assert_backward_batch_independence(
+        model_factory, supervised_batch
+    )
 
 
 def test_backward_batch_independence_batch_norm_success():
     def model_factory():
         return torch.nn.Sequential(torch.nn.BatchNorm1d(10), torch.nn.Linear(10, 10))
+
     supervised_batch = (torch.randn(100, 10), torch.randint(0, 10, (100,)))
-    torch_diagnostics.assert_backward_batch_independence(model_factory, supervised_batch)
+    torch_diagnostics.assert_backward_batch_independence(
+        model_factory, supervised_batch
+    )
 
 
 def test_backward_batch_independence_failure():
@@ -159,10 +218,52 @@ def test_backward_batch_independence_failure():
 
         def forward(self, x):
             return self.linear(x.sum(dim=0)).repeat(x.shape[0], 1)
-        
+
     supervised_batch = (torch.randn(100, 10), torch.randint(0, 10, (100,)))
     with pytest.raises(AssertionError):
         torch_diagnostics.assert_backward_batch_independence(Model, supervised_batch)
+
+
+def test_backward_causal_property_success():
+    def model_factory():
+        return torch.nn.Linear(10, 10)
+
+    supervised_batch = (
+        torch.randn(1, 100, 10),
+        torch.randint(
+            0,
+            10,
+            (
+                1,
+                100,
+            ),
+        ),
+    )
+    torch_diagnostics.assert_backward_causal_property(model_factory, supervised_batch)
+
+
+def test_backward_causal_property_failure():
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(10, 10)
+
+        def forward(self, x):
+            return self.linear(x.sum(dim=1)).repeat(1, x.shape[1], 1)
+
+    supervised_batch = (
+        torch.randn(1, 100, 10),
+        torch.randint(
+            0,
+            10,
+            (
+                1,
+                100,
+            ),
+        ),
+    )
+    with pytest.raises(AssertionError):
+        torch_diagnostics.assert_backward_causal_property(Model, supervised_batch)
 
 
 def test_input_independence_baseline_worse_success():

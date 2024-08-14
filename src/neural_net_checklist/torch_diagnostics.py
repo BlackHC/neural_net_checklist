@@ -14,6 +14,7 @@ from PIL import Image
 
 
 DEFAULT_DEVICE = "cpu"
+ALL_CLOSE_ATOL = 1e-6
 
 
 # A supervised batch input is either a (batched) tensor or a function that takes a batch size and returns a tensor of that batch size.
@@ -133,6 +134,38 @@ def train_batch(
         yield (loss.item(), optimizer)
 
 
+def replace_norm_layers_with_identity(model: torch.nn.Module):
+    """
+    Replaces all norm layers with identity layers.
+
+    Args:
+        model (torch.nn.Module): The model to replace the norm layers in.
+    """
+    replaced_module_infos = defaultdict(set)
+
+    def replace_norm_layer(module, prefix=""):
+        for name, child in module.named_children():
+            if isinstance(
+                child,
+                (
+                    torch.nn.BatchNorm1d,
+                    torch.nn.BatchNorm2d,
+                    torch.nn.BatchNorm3d,
+                    torch.nn.LayerNorm,
+                    torch.nn.GroupNorm,
+                ),
+            ):
+                replaced_module_infos[child.__class__.__name__].add(f"{prefix}.{name}")
+                getattr(module, name).forward = lambda x: x
+            else:
+                replace_norm_layer(child, prefix=f"{prefix}.{name}" if prefix else name)
+
+    replace_norm_layer(model)
+    print(
+        f"Replaced {len(replaced_module_infos)} norm layers with Identity: {replaced_module_infos}"
+    )
+
+
 def assert_balanced_classification_cross_entropy_loss_at_init(
     model: torch.nn.Module,
     supervised_batch_provider: SupervisedBatchProvider,
@@ -140,6 +173,7 @@ def assert_balanced_classification_cross_entropy_loss_at_init(
     num_classes: int,
     device: str = DEFAULT_DEVICE,
     rel_tolerance=0.75,
+    loss_fn: torch.nn.Module = None,
 ):
     """
     Asserts that the loss at initialization is close to the expected loss for a balanced classification problem.
@@ -157,14 +191,17 @@ def assert_balanced_classification_cross_entropy_loss_at_init(
     Raises:
         AssertionError: If the model's loss at initialization is not close to the expected loss for a balanced classification problem.
     """
+    if loss_fn is None:
+        loss_fn = torch.nn.functional.cross_entropy
+
     supervised_inputs, supervised_targets = get_supervised_batch(
-        supervised_batch_provider, batch_size=num_classes, device=device
+        supervised_batch_provider, batch_size=min(128, num_classes), device=device
     )
     model.to(device)
     model.eval()  # Set the model to evaluation mode
     with torch.no_grad():
         outputs = model(supervised_inputs)
-        loss = torch.nn.functional.cross_entropy(outputs, supervised_targets)
+        loss = loss_fn(outputs, supervised_targets)
 
     expected_loss = np.log(num_classes)
 
@@ -270,14 +307,76 @@ def assert_forward_batch_independence(
         b_out = ab_out[1]
         c_out = bc_out[1]
 
-    assert torch.allclose(b_out, bc_out[0])
+    assert torch.allclose(
+        b_out, bc_out[0], atol=ALL_CLOSE_ATOL
+    ), f"b_out: {b_out}, bc_out[0]: {bc_out[0]}, diff: {b_out - bc_out[0]}"
 
-    assert torch.allclose(a_out, ac_out[0])
-    assert torch.allclose(c_out, ac_out[1])
+    assert torch.allclose(
+        a_out, ac_out[0], atol=ALL_CLOSE_ATOL
+    ), f"a_out: {a_out}, ac_out[0]: {ac_out[0]}, diff: {a_out - ac_out[0]}"
+    assert torch.allclose(
+        c_out, ac_out[1], atol=ALL_CLOSE_ATOL
+    ), f"c_out: {c_out}, ac_out[1]: {ac_out[1]}, diff: {c_out - ac_out[1]}"
 
-    assert torch.allclose(a_out, abc_out[0])
-    assert torch.allclose(b_out, abc_out[1])
-    assert torch.allclose(c_out, abc_out[2])
+    assert torch.allclose(
+        a_out, abc_out[0], atol=ALL_CLOSE_ATOL
+    ), f"a_out: {a_out}, abc_out[0]: {abc_out[0]}, diff: {a_out - abc_out[0]}"
+    assert torch.allclose(
+        b_out, abc_out[1], atol=ALL_CLOSE_ATOL
+    ), f"b_out: {b_out}, abc_out[1]: {abc_out[1]}, diff: {b_out - abc_out[1]}"
+    assert torch.allclose(
+        c_out, abc_out[2], atol=ALL_CLOSE_ATOL
+    ), f"c_out: {c_out}, abc_out[2]: {abc_out[2]}, diff: {c_out - abc_out[2]}"
+
+
+def assert_forward_causal_property(
+    model_factory: ModelFactory,
+    supervised_batch_provider: SupervisedBatchProvider,
+    *,
+    train_mode: bool = False,
+    device: str = DEFAULT_DEVICE,
+):
+    """
+    Asserts that the model's forward pass exhibits causal independence.
+
+    This function checks if later tokens only depend on earlier ones, assuming causal_dim = 1.
+
+    Args:
+        model_factory (ModelFactory): A function that returns a new instance of the model.
+        supervised_batch_provider (SupervisedBatchProvider): The training data.
+        train_mode (bool, optional): Whether to use the model in training mode.
+        device (str, optional): The device to move the tensors to.
+
+    Raises:
+        AssertionError: If the model's forward pass does not exhibit causal independence.
+    """
+    supervised_inputs, _ = get_supervised_batch(
+        supervised_batch_provider, batch_size=1, device=device
+    )
+    model = model_factory().to(device)
+    replace_norm_layers_with_identity(model)
+    if train_mode:
+        model.train()
+    else:
+        model.eval()
+
+    # Assume input shape is (batch_size, sequence_length, ...)
+    sequence_length = min(supervised_inputs.shape[1], 16)
+
+    # Generate outputs for progressively longer input sequences
+    outputs = []
+    for i in range(1, sequence_length + 1):
+        with torch.no_grad():
+            output = model(supervised_inputs[:, :i])
+        outputs.append(output)
+
+    # Check causal property
+    for i in range(1, sequence_length):
+        assert torch.allclose(
+            outputs[i - 1][:, :i], outputs[i][:, :i], atol=ALL_CLOSE_ATOL
+        ), f"Causal independence violated at position {i}: {outputs[i-1][:, :i]} != {outputs[i][:, :i]}"
+
+    print("Causal independence verified.")
 
 
 def assert_non_zero_gradients(
@@ -315,38 +414,6 @@ def assert_non_zero_gradients(
         assert torch.any(param.grad != 0), f"Gradient for {name} is all zeros"
 
     print("All gradients are non-zero.")
-
-
-def replace_norm_layers_with_identity(model: torch.nn.Module):
-    """
-    Replaces all norm layers with identity layers.
-
-    Args:
-        model (torch.nn.Module): The model to replace the norm layers in.
-    """
-    replaced_modules = defaultdict(set)
-
-    def replace_norm_layer(module, prefix=""):
-        for name, child in module.named_children():
-            if isinstance(
-                child,
-                (
-                    torch.nn.BatchNorm1d,
-                    torch.nn.BatchNorm2d,
-                    torch.nn.BatchNorm3d,
-                    torch.nn.LayerNorm,
-                    torch.nn.GroupNorm,
-                ),
-            ):
-                replaced_modules[child.__class__.__name__].add(f"{prefix}.{name}")
-                setattr(module, name, torch.nn.Identity())
-            else:
-                replace_norm_layer(child, prefix=f"{prefix}.{name}" if prefix else name)
-
-    replace_norm_layer(model)
-    print(
-        f"Replaced {len(replaced_modules)} norm layers with Identity: {replaced_modules}"
-    )
 
 
 def assert_backward_batch_independence(
@@ -403,10 +470,10 @@ def assert_backward_batch_independence(
 
     # Verify that the other gradient is zero each time
     assert torch.allclose(
-        first_gradients[1], torch.zeros_like(first_gradients[1])
+        first_gradients[1], torch.zeros_like(first_gradients[1]), atol=ALL_CLOSE_ATOL
     ), f"Gradient of first output with respect to second input is not zero: {first_gradients[1]}"
     assert torch.allclose(
-        second_gradients[0], torch.zeros_like(second_gradients[0])
+        second_gradients[0], torch.zeros_like(second_gradients[0]), atol=ALL_CLOSE_ATOL
     ), f"Gradient of second output with respect to first input is not zero: {second_gradients[0]}"
     # Also verify that the gradient is not zero
     assert torch.any(
@@ -417,6 +484,66 @@ def assert_backward_batch_independence(
     ), f"Gradient of second output with respect to first input is all zeros: {second_gradients}"
 
     print("Backward pass is batch independent.")
+
+
+def assert_backward_causal_property(
+    model_factory: ModelFactory,
+    supervised_batch_provider: SupervisedBatchProvider,
+    *,
+    device: str = DEFAULT_DEVICE,
+):
+    """
+    Asserts that the model's backward pass exhibits causal independence.
+
+    This function checks if gradients for a token only depend on previous tokens,
+    ensuring that the model maintains causal structure during backpropagation.
+
+    Args:
+        model_factory (ModelFactory): A function that returns a new instance of the model.
+        supervised_batch_provider (SupervisedBatchProvider): The training data.
+        device (str, optional): The device to move the tensors to.
+
+    Raises:
+        AssertionError: If the model's backward pass violates causal independence.
+    """
+    supervised_inputs, _ = get_supervised_batch(
+        supervised_batch_provider, batch_size=1, device=device
+    )
+    supervised_inputs = supervised_inputs.clone().detach().requires_grad_(True)
+    model = model_factory().to(device)
+    replace_norm_layers_with_identity(model)
+
+    model.train()
+    model.zero_grad()
+
+    # Forward pass
+    outputs = model(supervised_inputs)
+
+    sequence_length = outputs.shape[1]
+
+    for t in range(sequence_length):
+        # Compute gradient for output at time t
+        if t > 0:
+            supervised_inputs.grad.zero_()
+
+        outputs[0, t].sum().backward(retain_graph=True)
+
+        current_grad = supervised_inputs.grad.clone()
+
+        # Check causal independence
+        if t < sequence_length - 1:
+            assert torch.allclose(
+                current_grad[0, t + 1 :],
+                torch.zeros_like(current_grad[0, t + 1 :]),
+                atol=ALL_CLOSE_ATOL,
+            ), f"Gradient at time {t} affects future tokens: {current_grad[0, t+1:]}"
+
+        # Verify that the gradient for current and past tokens is not all zeros
+        assert torch.any(
+            current_grad[0, : t + 1] != 0
+        ), f"Gradient for current and past tokens at time {t} is all zeros: {current_grad[0, :t+1]}"
+
+    print("Backward pass exhibits causal independence.")
 
 
 def assert_input_independence_baseline_worse(
@@ -557,6 +684,7 @@ def assert_overfit_to_batch(
             supervised_batch,
             num_steps=max_steps,
             device=device,
+            loss_fn=loss_fn,
         )
     ):
         if loss < threshold:
@@ -740,3 +868,102 @@ def assert_all_for_classification_cross_entropy_loss(
         model_factory, supervised_batch_provider, device=device
     )
     assert_overfit_to_batch(model_factory(), supervised_batch_provider, device=device)
+
+
+def replace_input_embedding_layer(
+    model_factory: ModelFactory, embedding_layer_name: str
+):
+    """
+    Replace the input embedding layer with a fixed embedding layer.
+    """
+
+    def fixed_model_factory():
+        """
+        A factory function that returns a new instance of the model
+        with the input embedding layer replaced with a fixed embedding
+        layer.
+        """
+        model = model_factory()
+        # Find the embedding layer
+        embedding_layer = model.get_submodule(embedding_layer_name)
+        embedding_layer.forward = lambda x: x @ embedding_layer.weight
+        return model
+
+    return fixed_model_factory
+
+
+def assert_all_for_llm_cross_entropy_loss(
+    model_factory: ModelFactory,
+    supervised_batch_provider: SupervisedBatchProvider,
+    *,
+    embedding_layer_name: str | None = None,
+    vocab_size: int,
+    device: str = DEFAULT_DEVICE,
+):
+    """
+    Assert all conditions for an LLM model with cross-entropy loss.
+
+    Args:
+        model_factory (ModelFactory): A function that returns a new instance of the model.
+        supervised_batch_provider (SupervisedBatchProvider): The training data.
+        vocab_size (int): The size of the vocabulary.
+        device (str, optional): The device to move the tensors to.
+    """
+    if embedding_layer_name is not None:
+        supervised_inputs, supervised_targets = get_supervised_batch(
+            supervised_batch_provider, batch_size=min(128, vocab_size), device=device
+        )
+        # Convert the inputs into one-hot encoded vectors
+        supervised_inputs = torch.nn.functional.one_hot(
+            supervised_inputs, num_classes=vocab_size
+        ).float()
+        supervised_batch_provider = (supervised_inputs, supervised_targets)
+
+        model_factory = replace_input_embedding_layer(
+            model_factory, embedding_layer_name
+        )
+
+    def loss_fn(outputs, targets):
+        assert outputs.shape[:-1] == targets.shape
+        individual_loss = torch.nn.functional.cross_entropy(
+            outputs.view(-1, vocab_size), targets.view(-1)
+        )
+        return individual_loss.mean()
+
+    assert_balanced_classification_cross_entropy_loss_at_init(
+        model_factory(),
+        supervised_batch_provider,
+        loss_fn=loss_fn,
+        num_classes=vocab_size,
+        device=device,
+    )
+    assert_balanced_classification_cross_entropy_init_calibrated(
+        model_factory(),
+        supervised_batch_provider,
+        num_classes=vocab_size,
+        device=device,
+    )
+    assert_forward_batch_independence(
+        model_factory, supervised_batch_provider, device=device
+    )
+    assert_forward_causal_property(
+        model_factory, supervised_batch_provider, device=device
+    )
+    assert_non_zero_gradients(model_factory(), supervised_batch_provider, device=device)
+    assert_backward_batch_independence(
+        model_factory, supervised_batch_provider, device=device
+    )
+    assert_backward_causal_property(
+        model_factory, supervised_batch_provider, device=device
+    )
+    assert_input_independence_baseline_worse(
+        model_factory, supervised_batch_provider, device=device, loss_fn=loss_fn
+    )
+    # For LLMs, we can overfit to a batch with a higher threshold
+    assert_overfit_to_batch(
+        model_factory(),
+        supervised_batch_provider,
+        device=device,
+        loss_fn=loss_fn,
+        threshold=1e-1,
+    )

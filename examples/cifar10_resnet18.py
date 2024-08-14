@@ -51,7 +51,7 @@ torch_diagnostics.ModelInputs(torch_diagnostics.get_supervised_batch(train_loade
 torch_diagnostics.assert_all_for_classification_cross_entropy_loss(
     ResNet18,
     train_loader,
-    10,
+    num_classes=10,
     device="cuda"
     if torch.cuda.is_available()
     else "mps"
