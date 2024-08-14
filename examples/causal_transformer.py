@@ -133,10 +133,10 @@ criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters())
 
 # %%
-
 # Run diagnostics
 torch_diagnostics.ModelInputs(torch_diagnostics.get_supervised_batch(dataloader))
-torch_diagnostics.assert_all_for_llm_cross_entropy_loss(
+#%%
+torch_diagnostics.assert_all_for_causal_llm_cross_entropy_loss(
     lambda: CausalTransformer(vocab_size),
     dataloader,
     embedding_layer_name="embedding",
@@ -175,3 +175,5 @@ torch_diagnostics.assert_all_for_llm_cross_entropy_loss(
 
 #     generated_text = ''.join([list(dataset.vocab.keys())[idx] for idx in input_seq.squeeze().tolist()])
 #     print(generated_text)
+
+# %%

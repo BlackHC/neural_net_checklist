@@ -162,7 +162,7 @@ def replace_norm_layers_with_identity(model: torch.nn.Module):
 
     replace_norm_layer(model)
     print(
-        f"Replaced {len(replaced_module_infos)} norm layers with Identity: {replaced_module_infos}"
+        f"🔧 Replaced {sum(len(v) for v in replaced_module_infos.values())} norm layers with Identity: {dict(replaced_module_infos)}"
     )
 
 
@@ -191,6 +191,8 @@ def assert_balanced_classification_cross_entropy_loss_at_init(
     Raises:
         AssertionError: If the model's loss at initialization is not close to the expected loss for a balanced classification problem.
     """
+    print("🔍 Checking loss at initialization...")
+    
     if loss_fn is None:
         loss_fn = torch.nn.functional.cross_entropy
 
@@ -211,7 +213,8 @@ def assert_balanced_classification_cross_entropy_loss_at_init(
     assert (
         loss.item() / expected_loss - 1.0 <= rel_tolerance
     ), f"Loss at initialization ({loss.item():.4f}) is not within {rel_tolerance * 100:.1f}% of expected loss ({expected_loss:.4f})"
-
+    print("✅ Loss at initialization is within the expected range.")
+    
 
 def assert_balanced_classification_cross_entropy_init_calibrated(
     model: torch.nn.Module,
@@ -235,6 +238,7 @@ def assert_balanced_classification_cross_entropy_init_calibrated(
     Raises:
         AssertionError: If the model's predictions are not close to the expected probability of 1/num_classes for each class.
     """
+    print("🔍 Checking calibration at initialization...")
     supervised_inputs, _ = get_supervised_batch(
         supervised_batch_provider, device=device
     )  # Larger batch for better statistics
@@ -263,7 +267,8 @@ def assert_balanced_classification_cross_entropy_init_calibrated(
             print(f"Expected probability: {expected_prob}")
 
         assert is_balanced, f"Model is not well-calibrated at initialization. Mean deviation: {mean_abs_deviation}"
-
+    print("✅ Model is well-calibrated at initialization.")
+    
 
 def assert_forward_batch_independence(
     model_factory: ModelFactory,
@@ -286,6 +291,7 @@ def assert_forward_batch_independence(
     Raises:
         AssertionError: If the model's forward pass is not independent of the order of the inputs in the batch.
     """
+    print("🔍 Checking forward batch independence...")
     supervised_inputs, _ = get_supervised_batch(
         supervised_batch_provider, batch_size=3, device=device
     )
@@ -327,7 +333,9 @@ def assert_forward_batch_independence(
     assert torch.allclose(
         c_out, abc_out[2], atol=ALL_CLOSE_ATOL
     ), f"c_out: {c_out}, abc_out[2]: {abc_out[2]}, diff: {c_out - abc_out[2]}"
-
+    print("✅ Forward batch independence verified.")
+    
+    
 
 def assert_forward_causal_property(
     model_factory: ModelFactory,
@@ -350,6 +358,7 @@ def assert_forward_causal_property(
     Raises:
         AssertionError: If the model's forward pass does not exhibit causal independence.
     """
+    print("🔍 Checking forward causal property...")
     supervised_inputs, _ = get_supervised_batch(
         supervised_batch_provider, batch_size=1, device=device
     )
@@ -376,7 +385,7 @@ def assert_forward_causal_property(
             outputs[i - 1][:, :i], outputs[i][:, :i], atol=ALL_CLOSE_ATOL
         ), f"Causal independence violated at position {i}: {outputs[i-1][:, :i]} != {outputs[i][:, :i]}"
 
-    print("Causal independence verified.")
+    print("✅ Causal independence verified.")
 
 
 def assert_non_zero_gradients(
@@ -399,6 +408,8 @@ def assert_non_zero_gradients(
     Raises:
         AssertionError: If the model's gradients are all zero.
     """
+    print("🔍 Checking non-zero gradients...")
+    
     supervised_inputs, _ = get_supervised_batch(
         supervised_batch_provider, batch_size=1, device=device
     )
@@ -413,7 +424,7 @@ def assert_non_zero_gradients(
         assert param.grad is not None, f"Gradient for {name} is None"
         assert torch.any(param.grad != 0), f"Gradient for {name} is all zeros"
 
-    print("All gradients are non-zero.")
+    print("✅ All gradients are non-zero.")
 
 
 def assert_backward_batch_independence(
@@ -436,6 +447,8 @@ def assert_backward_batch_independence(
     Raises:
         AssertionError: If the model's backward pass is not independent of the batch structure.
     """
+    print("🔍 Checking backward batch independence...")
+    
     supervised_inputs, _ = get_supervised_batch(
         supervised_batch_provider, batch_size=2, device=device
     )
@@ -483,7 +496,7 @@ def assert_backward_batch_independence(
         second_gradients != 0
     ), f"Gradient of second output with respect to first input is all zeros: {second_gradients}"
 
-    print("Backward pass is batch independent.")
+    print("✅ Backward pass is batch independent.")
 
 
 def assert_backward_causal_property(
@@ -506,6 +519,8 @@ def assert_backward_causal_property(
     Raises:
         AssertionError: If the model's backward pass violates causal independence.
     """
+    print("🔍 Checking backward causal property...")
+    
     supervised_inputs, _ = get_supervised_batch(
         supervised_batch_provider, batch_size=1, device=device
     )
@@ -543,10 +558,10 @@ def assert_backward_causal_property(
             current_grad[0, : t + 1] != 0
         ), f"Gradient for current and past tokens at time {t} is all zeros: {current_grad[0, :t+1]}"
 
-    print("Backward pass exhibits causal independence.")
+    print("✅ Backward pass exhibits causal independence.")
 
 
-def assert_input_independence_baseline_worse(
+def assert_input_independent_baseline_worse(
     model_factory: ModelFactory,
     supervised_batch_provider: SupervisedBatchProvider,
     *,
@@ -579,6 +594,8 @@ def assert_input_independence_baseline_worse(
     Raises:
         AssertionError: If the model trained on real data doesn't outperform the one trained on fake data.
     """
+    print("🔍 Checking input independence baseline worse...")
+    
     if train_batch_fn is None:
         train_batch_fn = functools.partial(train_batch, **kwargs)
     else:
@@ -627,6 +644,8 @@ def assert_input_independence_baseline_worse(
     assert (
         regular_loss < input_independent_loss
     ), f"Regular loss ({regular_loss}) is not less than input independent loss ({input_independent_loss})"
+    
+    print("✅ Input independent baseline is worse.")
 
 
 def assert_overfit_to_batch(
@@ -663,7 +682,8 @@ def assert_overfit_to_batch(
     Raises:
         AssertionError: If the model fails to overfit to the batch.
     """
-    print("Overfitting to batch...")
+    print("🔍 Overfitting to the batch...")
+    
     if train_batch_fn is None:
         train_batch_fn = functools.partial(train_batch, **kwargs)
     else:
@@ -688,7 +708,8 @@ def assert_overfit_to_batch(
         )
     ):
         if loss < threshold:
-            print(f"Loss below threshold at step {step}")
+            print(f"Loss ({loss}) below threshold ({threshold}) at step {step}.")
+            print("✅ Model can overfit to batch.")
             return loss, optimizer
     assert (
         False
@@ -826,6 +847,7 @@ def patch_module_raise_inputs(module: torch.nn.Module):
     """
     Patch a module's forward method to throw a custom exception with model inputs for IPython display support.
     """
+    print("🔧 Patching module to raise inputs right away...")
     module.forward = functools.wraps(module.forward)(raise_model_inputs)
 
 
@@ -845,6 +867,7 @@ def assert_all_for_classification_cross_entropy_loss(
         num_classes (int): The number of classes in the dataset.
         device (str, optional): The device to move the tensors to.
     """
+    print("🔍 Checking all conditions for classification model with cross-entropy loss...")
     assert_balanced_classification_cross_entropy_loss_at_init(
         model_factory(),
         supervised_batch_provider,
@@ -864,11 +887,11 @@ def assert_all_for_classification_cross_entropy_loss(
     assert_backward_batch_independence(
         model_factory, supervised_batch_provider, device=device
     )
-    assert_input_independence_baseline_worse(
+    assert_input_independent_baseline_worse(
         model_factory, supervised_batch_provider, device=device
     )
     assert_overfit_to_batch(model_factory(), supervised_batch_provider, device=device)
-
+    print("✅ All conditions for classification model with cross-entropy loss verified.")
 
 def replace_input_embedding_layer(
     model_factory: ModelFactory, embedding_layer_name: str
@@ -892,7 +915,7 @@ def replace_input_embedding_layer(
     return fixed_model_factory
 
 
-def assert_all_for_llm_cross_entropy_loss(
+def assert_all_for_causal_llm_cross_entropy_loss(
     model_factory: ModelFactory,
     supervised_batch_provider: SupervisedBatchProvider,
     *,
@@ -909,6 +932,8 @@ def assert_all_for_llm_cross_entropy_loss(
         vocab_size (int): The size of the vocabulary.
         device (str, optional): The device to move the tensors to.
     """
+    print("🔍 Checking all conditions for a causal LLM model with cross-entropy loss...")
+    
     if embedding_layer_name is not None:
         supervised_inputs, supervised_targets = get_supervised_batch(
             supervised_batch_provider, batch_size=min(128, vocab_size), device=device
@@ -956,7 +981,7 @@ def assert_all_for_llm_cross_entropy_loss(
     assert_backward_causal_property(
         model_factory, supervised_batch_provider, device=device
     )
-    assert_input_independence_baseline_worse(
+    assert_input_independent_baseline_worse(
         model_factory, supervised_batch_provider, device=device, loss_fn=loss_fn
     )
     # For LLMs, we can overfit to a batch with a higher threshold
@@ -967,3 +992,4 @@ def assert_all_for_llm_cross_entropy_loss(
         loss_fn=loss_fn,
         threshold=1e-1,
     )
+    print("✅ All conditions for a causal LLM model with cross-entropy loss verified.")

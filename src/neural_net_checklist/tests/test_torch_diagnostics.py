@@ -4,7 +4,7 @@ import torch
 import neural_net_checklist.torch_diagnostics as torch_diagnostics
 
 
-def test_get_dummy_supervised_data_tuple():
+def test_get_supervised_batch_tuple():
     supervised_batch = (torch.randn(100, 10), torch.randint(0, 10, (100,)))
     result_batch = torch_diagnostics.get_supervised_batch(
         supervised_batch, batch_size=10
@@ -13,7 +13,7 @@ def test_get_dummy_supervised_data_tuple():
     assert torch.allclose(result_batch[1], supervised_batch[1][:10])
 
 
-def test_get_dummy_supervised_data_dataloader():
+def test_get_supervised_batch_dataloader():
     dummy_data = torch.randn(100, 10), torch.randint(0, 10, (100,))
     supervised_batch = torch.utils.data.DataLoader(
         torch.utils.data.TensorDataset(dummy_data[0], dummy_data[1]), batch_size=32
@@ -25,7 +25,7 @@ def test_get_dummy_supervised_data_dataloader():
     assert torch.allclose(result_batch[1], dummy_data[1][:10])
 
 
-def test_get_dummy_supervised_data_dataset():
+def test_get_supervised_batch_dataset():
     dummy_data = torch.randn(100, 10), torch.randint(0, 10, (100,))
     supervised_batch = torch.utils.data.TensorDataset(dummy_data[0], dummy_data[1])
     result_batch = torch_diagnostics.get_supervised_batch(
@@ -35,7 +35,7 @@ def test_get_dummy_supervised_data_dataset():
     assert torch.allclose(result_batch[1], dummy_data[1][:10])
 
 
-def test_get_dummy_supervised_data_function():
+def test_get_supervised_batch_function():
     dummy_data = torch.randn(32, 10), torch.randint(0, 10, (32,))
 
     def supervised_batch_fn(batch_size):
@@ -266,19 +266,19 @@ def test_backward_causal_property_failure():
         torch_diagnostics.assert_backward_causal_property(Model, supervised_batch)
 
 
-def test_input_independence_baseline_worse_success():
+def test_input_indepent_baseline_worse_success():
     def model_factory():
         return torch.nn.Linear(10, 10)
 
     dummy_input = torch.randn(100, 10)
     dummy_target = (dummy_input.mean(dim=1) > 0).long()
     supervised_batch = (dummy_input, dummy_target)
-    torch_diagnostics.assert_input_independence_baseline_worse(
+    torch_diagnostics.assert_input_independent_baseline_worse(
         model_factory, supervised_batch
     )
 
 
-def test_input_independence_baseline_worse_failure():
+def test_input_indepent_baseline_worse_failure():
     class Model(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -291,7 +291,7 @@ def test_input_independence_baseline_worse_failure():
     dummy_target = (dummy_input.mean(dim=1) > 0).long()
     supervised_batch = (dummy_input, dummy_target)
     with pytest.raises(AssertionError):
-        torch_diagnostics.assert_input_independence_baseline_worse(
+        torch_diagnostics.assert_input_independent_baseline_worse(
             Model, supervised_batch
         )
 

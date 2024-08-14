@@ -1,6 +1,6 @@
 [project]
 name = "neural_net_checklist"
-version = "1.0.0"
+version = "1.1.0"
 description = "A ready-to-use implementation of Andrei Karpathhy's \"recipe for training neural networks\""
 authors = [
     {name = "Andreas Kirsch", email = "blackhc@gmail.com"},
