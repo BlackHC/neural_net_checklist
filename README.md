@@ -1,6 +1,8 @@
-# A codified recipe for training neural networks
+# neural_net_checklist: A codified recipe for training neural networks
 
-This repository is based on Andrei Karpathy's famous blog post "A recipe for training neural networks" (https://karpathy.github.io/2019/04/25/recipe/).
+This repository is based on Andrei Karpathy's well-known blog post "A recipe for training neural networks" (https://karpathy.github.io/2019/04/25/recipe/). Instead of being a checklist, this repository implements a set of assertions that can be used to diagnose neural networks. 
+
+This is useful to save time when debugging neural networks without having to think of each assertion anew every time.
 
 Specifically, this repository implements:
 

@@ -49,9 +49,9 @@ train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
 
 # %%
-import neural_net_checklist.torch_recipe as torch_recipe
+import neural_net_checklist.torch_diagnostics as torch_diagnostics
 
-torch_recipe.ModelInputs(torch_recipe.get_supervised_data(train_loader))
+torch_diagnostics.ModelInputs(torch_diagnostics.get_supervised_batch(train_loader))
 
 # %%
-torch_recipe.assert_all_for_classification_cross_entropy_loss(LeNet5, train_loader, 10)
+torch_diagnostics.assert_all_for_classification_cross_entropy_loss(LeNet5, train_loader, 10)
